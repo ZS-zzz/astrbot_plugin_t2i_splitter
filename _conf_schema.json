@@ -1,0 +1,55 @@
+{
+  "卡片宽度": {
+    "type": "int",
+    "description": "卡片基础宽度（像素）",
+    "default": 1000
+  },
+  "字体大小": {
+    "type": "int",
+    "description": "正文内容的字体大小",
+    "default": 28
+  },
+  "主题模式": {
+    "type": "string",
+    "description": "外观主题模式",
+    "options": ["自动", "浅色", "深色"],
+    "default": "自动"
+  },
+  "品牌名称": {
+    "type": "string",
+    "description": "左上角显示的品牌名称",
+    "default": "无名小服"
+  },
+  "显示头部": {
+    "type": "bool",
+    "description": "是否显示头部信息（品牌名、时间、日期等）",
+    "default": true
+  },
+  "显示每日一言": {
+    "type": "bool",
+    "description": "是否在中间显示每日一言卡片",
+    "default": true
+  },
+  "显示服务器状态": {
+    "type": "bool",
+    "description": "是否在最底部显示服务器状态卡片",
+    "default": true
+  },
+  "状态详细程度": {
+    "type": "string",
+    "description": "服务器状态显示的信息详略程度",
+    "options": ["简洁", "详细"],
+    "default": "简洁"
+  },
+  "图片转换方式": {
+    "type": "string",
+    "description": "分段后的输出方式：多图分段（每句分段分别转图片发送）或 单图保留分句（所有回答只转一张图片但保留段落间距）",
+    "options": ["多图分段", "单图保留分句"],
+    "default": "多图分段"
+  },
+  "最大分段数": {
+    "type": "int",
+    "description": "智能分段时最多允许分成几句（仅在多图分段模式下生效）",
+    "default": 5
+  }
+}

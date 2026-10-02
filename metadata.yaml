@@ -1,0 +1,5 @@
+name: astrbot_plugin_t2i_splitter
+display_name: 文本转图片与智能分段
+desc: 将 LLM 的长文本智能分段并转换为精美图片，支持单图/多图模式切换，底部附带每日一言和服务器状态。极简中文配置，开箱即用。
+version: v1.3.0
+repo: https://github.com/ZS-zzz/astrbot_plugin_t2i_splitter
