@@ -34,43 +34,35 @@ try:
 except ImportError:
     HAS_PSUTIL = False
 
-# ============ 主题色板 (优化文字对比度与 ID 标签颜色) ============
+# ============ 主题色板 (更通透的毛玻璃 & 高可读性 & 颜色统一) ============
 LIGHT_THEME = {
     "bg_start":       (245, 249, 255),
     "bg_end":         (227, 242, 253),
-    "text":           (20, 30, 40, 255),       # 加深主文字
-    "text_soft":      (60, 75, 90, 255),       # 加深副文字，提高可读性
-    "primary":        (25, 118, 210, 255),     
+    "text":           (20, 30, 40, 255),
+    "text_soft":      (60, 75, 90, 255),
+    "primary":        (25, 118, 210, 255),
     "accent":         (66, 165, 245, 255),
-    "card_bg":        (255, 255, 255, 60),     # 增加不透明度，防止背景干扰文字
-    "card_border":    (255, 255, 255, 180),    
-    "quote_bg":       (30, 136, 229, 40),      
-    "quote_border":   (30, 136, 229, 100),
-    "status_bg":      (30, 136, 229, 40),
-    "status_border":  (30, 136, 229, 100),
-    "code_bg":        (238, 242, 248, 230),
-    "inline_code_bg": (225, 235, 245, 255),    # 浅灰蓝底
-    "inline_code_fg": (20, 90, 160, 255),      # 深蓝字
-    "inline_code_border": (180, 210, 240, 255),# ID 标签边框
+    "card_bg":        (255, 255, 255, 18),
+    "card_border":    (255, 255, 255, 80),
+    "quote_bg":       (30, 136, 229, 16),
+    "quote_border":   (30, 136, 229, 60),
+    "status_bg":      (30, 136, 229, 16),
+    "status_border":  (30, 136, 229, 60),
 }
 
 DARK_THEME = {
     "bg_start":       (18, 31, 42),
     "bg_end":         (26, 44, 54),
     "text":           (240, 245, 255, 255),
-    "text_soft":      (195, 210, 225, 255),    # 提高副文字亮度
+    "text_soft":      (195, 210, 225, 255),
     "primary":        (100, 181, 246, 255),
     "accent":         (144, 202, 249, 255),
-    "card_bg":        (15, 25, 35, 80),        # 增加不透明度
-    "card_border":    (255, 255, 255, 60),
-    "quote_bg":       (100, 181, 246, 40),
-    "quote_border":   (100, 181, 246, 120),
-    "status_bg":      (100, 181, 246, 40),
-    "status_border":  (100, 181, 246, 120),
-    "code_bg":        (0, 0, 0, 150),
-    "inline_code_bg": (45, 55, 70, 255),       # 深灰蓝底
-    "inline_code_fg": (130, 200, 255, 255),    # 浅蓝字
-    "inline_code_border": (80, 100, 130, 255), # ID 标签边框
+    "card_bg":        (15, 25, 35, 28),
+    "card_border":    (255, 255, 255, 30),
+    "quote_bg":       (100, 181, 246, 18),
+    "quote_border":   (100, 181, 246, 70),
+    "status_bg":      (100, 181, 246, 18),
+    "status_border":  (100, 181, 246, 70),
 }
 
 FALLBACK_QUOTES = [
@@ -91,16 +83,16 @@ FALLBACK_QUOTES = [
 DEFAULT_BG_URLS = ["https://uapis.cn/api/v1/random/image?category=acg", "https://www.loliapi.com/acg/"]
 DEFAULT_QUOTE_APIS = ["https://v1.hitokoto.cn/?c=d&c=i&c=k&encode=json", "https://api.xygeng.cn/one"]
 
-QQ_OFFICIAL_IMAGE_LIMIT = 4 * 1024 * 1024
-
 
 @register(
     "astrbot_plugin_t2i_splitter",
     "无名小服",
-    "文本转图片 + 智能分段融合插件 (Markdown 支持 & 布局修复 & 通透毛玻璃 & 高可读性)",
-    "v1.6.3",
+    "文本转图片 + 智能分段融合插件 (Markdown 支持 & 布局修复 & 通透毛玻璃 & 高可读性 & 颜色统一 & 优化渲染)",
+    "v1.6.7",
 )
 class ForceT2ISplitterPlugin(Star):
+
+    _COLOR = object()  # 彩色 emoji 段标记
 
     _FONT_POOL = {
         "regular": [
@@ -126,6 +118,13 @@ class ForceT2ISplitterPlugin(Star):
             "/System/Library/Fonts/Menlo.ttc",
         ],
     }
+
+    # ============ 渲染性能调优参数 ============
+    _BLUR_CARD    = 40
+    _BLUR_LOCAL   = 20
+    _BLUR_SHADOW  = 8
+    _BLUR_DECO    = 45
+    _GRADIENT_STEP = 4
 
     def __init__(self, context: Context, config: dict = None):
         super().__init__(context)
@@ -174,7 +173,16 @@ class ForceT2ISplitterPlugin(Star):
         self.tmp_dir = "/tmp/astrbot_t2i_splitter"
         os.makedirs(self.tmp_dir, exist_ok=True)
         self._font_cache: dict = {}
-        self._font_stroke: dict = {}
+        self._font_cmap: dict = {}
+        self._font_cmap_by_path: dict = {}
+        self._fallback_cache: dict = {}
+        self._fallback_cmap = None
+        self._color_font = None
+        self._color_cmap = None
+        self._color_loaded = False
+        self._emoji_img_cache: dict = {}
+        self._font_metrics_cache: dict = {}
+        self._text_width_cache: dict = {}
         self._quote_cache = {"text": None, "ts": 0.0}
         self._quote_lock = threading.Lock()
         self._bg_cache = {"bytes": None, "ts": 0.0}
@@ -239,33 +247,199 @@ class ForceT2ISplitterPlugin(Star):
         if key in self._font_cache:
             return self._font_cache[key]
 
-        path, is_real_bold = self._resolve_font_path(bold=bold, italic=italic, mono=mono)
+        path, _ = self._resolve_font_path(bold=bold, italic=italic, mono=mono)
         if path:
             try:
                 font = ImageFont.truetype(path, size)
-                self._font_stroke[key] = bool(bold) and not is_real_bold
                 self._font_cache[key] = font
+                if path not in self._font_cmap_by_path:
+                    self._font_cmap_by_path[path] = self._read_cmap(path)
+                self._font_cmap[id(font)] = self._font_cmap_by_path.get(path)
                 return font
             except Exception:
                 pass
 
         font = ImageFont.load_default()
-        self._font_stroke[key] = False
         self._font_cache[key] = font
         return font
+
+    @staticmethod
+    def _read_cmap(path):
+        """读取字体的 cmap 码点集合；解析失败返回 None（表示未知，不触发回退）"""
+        try:
+            from fontTools.ttLib import TTFont
+            try:
+                f = TTFont(path, lazy=True)
+            except Exception:
+                # .ttc 字体集合必须指定 fontNumber，逐个尝试
+                for idx in range(8):
+                    try:
+                        f = TTFont(path, fontNumber=idx, lazy=True)
+                    except (ValueError, IndexError, Exception):
+                        break
+                    try:
+                        cmap = f.getBestCmap()
+                    except Exception:
+                        cmap = None
+                    if cmap:
+                        return set(cmap.keys())
+                return None
+            cmap = f.getBestCmap()
+            return set(cmap.keys()) if cmap else None
+        except Exception:
+            return None
+
+    def _load_fallback_font(self, size: int):
+        """加载 Symbola 字体（font_symbols.ttf），用于渲染主字体缺失的 emoji/符号字形"""
+        if size in self._fallback_cache:
+            return self._fallback_cache[size]
+        path = os.path.join(self.plugin_dir, "font_symbols.ttf")
+        font = None
+        if os.path.exists(path):
+            try:
+                font = ImageFont.truetype(path, size)
+            except Exception:
+                font = None
+        self._fallback_cache[size] = font
+        if font is not None and self._fallback_cmap is None:
+            self._fallback_cmap = self._read_cmap(path)
+        return font
+
+    def _load_color_font(self):
+        """懒加载 NotoColorEmoji（font_emoji.ttf，CBDT 彩色位图，固定 109px）"""
+        if self._color_loaded:
+            return
+        self._color_loaded = True
+        path = os.path.join(self.plugin_dir, "font_emoji.ttf")
+        if os.path.exists(path):
+            try:
+                self._color_font = ImageFont.truetype(path, 109)
+                self._color_cmap = self._read_cmap(path)
+            except Exception:
+                self._color_font = None
+                self._color_cmap = None
+        else:
+            self._color_font = None
+
+    def _render_colored_emoji(self, ch: str, size: int):
+        """用 NotoColorEmoji 渲染彩色 emoji，返回 (RGBA Image, 逻辑宽度)；失败返回 (None, 0)"""
+        size = max(4, int(size))
+        key = (ch, size)
+        cached = self._emoji_img_cache.get(key)
+        if cached is not None:
+            return cached
+        self._load_color_font()
+        if self._color_font is None:
+            return (None, 0)
+        try:
+            f109 = self._color_font
+            w = int(f109.getlength(ch)) + 2
+            tmp = Image.new("RGBA", (max(w, 8), 128), (0, 0, 0, 0))
+            td = ImageDraw.Draw(tmp)
+            td.text((0, 0), ch, font=f109, embedded_color=True)
+            bbox = tmp.getbbox()
+            if not bbox:
+                self._emoji_img_cache[key] = (None, 0)
+                return (None, 0)
+            tmp = tmp.crop(bbox)
+            scale = size / 109.0
+            nw = max(1, int(round(tmp.width * scale)))
+            nh = max(1, int(round(tmp.height * scale)))
+            img = tmp.resize((nw, nh), Image.LANCZOS)
+            width = int(round(w * scale))
+            result = (img, width)
+            if len(self._emoji_img_cache) > 400:
+                self._emoji_img_cache.clear()
+            self._emoji_img_cache[key] = result
+            return result
+        except Exception:
+            return (None, 0)
+
+    def _split_by_font(self, text: str, font):
+        """按字形覆盖拆分文本为 [(子串, 字体)]：主字体 → 彩色 emoji → Symbola 回退。
+        彩色段字体标记为 self._COLOR，ZWJ/VS16 字符跟随前一段。"""
+        if not text:
+            return []
+        cmap = self._font_cmap.get(id(font))
+        if not cmap:
+            return [(text, font)]
+        self._load_color_font()
+        size = getattr(font, "size", self.font_size)
+
+        out = []
+        cur_chars = []
+        cur_kind = font
+        for ch in text:
+            if ch in "\u200d\ufe0f":
+                # ZWJ / 变体选择符：并入当前段；若在行首被拆出（当前段为空）则归入彩色段（零宽，防豆腐块）
+                if not cur_chars and self._color_cmap:
+                    cur_kind = self._COLOR
+                cur_chars.append(ch)
+                continue
+            kind = font
+            cp = ord(ch)
+            if cp not in cmap:
+                if self._color_cmap and cp in self._color_cmap:
+                    kind = self._COLOR
+                elif self._fallback_cmap and cp in self._fallback_cmap:
+                    kind = self._load_fallback_font(size) or font
+            if kind is not cur_kind:
+                if cur_chars:
+                    out.append(("".join(cur_chars), cur_kind))
+                    cur_chars = []
+                cur_kind = kind
+            cur_chars.append(ch)
+        if cur_chars:
+            out.append(("".join(cur_chars), cur_kind))
+        return out
+
+    def _measure_atom(self, atom: str, font) -> int:
+        """测量 atom 的宽度，彩色 emoji / 符号按对应字体分别测宽"""
+        if not atom:
+            return 0
+        segs = self._split_by_font(atom, font)
+        if len(segs) == 1 and segs[0][1] is font:
+            return self._text_width(atom, font)
+        total = 0
+        for sub, sub_font in segs:
+            if sub_font is self._COLOR:
+                _, w = self._render_colored_emoji(sub, getattr(font, "size", self.font_size))
+                total += w
+            else:
+                total += self._text_width(sub, sub_font)
+        return int(total)
+
+    def _font_metrics(self, font):
+        fid = id(font)
+        cached = self._font_metrics_cache.get(fid)
+        if cached is not None:
+            return cached
+        try:
+            asc, desc = font.getmetrics()
+        except Exception:
+            asc, desc = 0, 0
+        self._font_metrics_cache[fid] = (asc, desc)
+        return asc, desc
 
     def _text_width(self, text: str, font) -> int:
         if not text:
             return 0
+        key = (id(font), text)
+        cached = self._text_width_cache.get(key)
+        if cached is not None:
+            return cached
         try:
-            return int(font.getlength(text))
+            w = int(font.getlength(text))
         except AttributeError:
-            pass
-        try:
-            bbox = font.getbbox(text)
-            return bbox[2] - bbox[0]
-        except AttributeError:
-            return font.getsize(text)[0]
+            try:
+                bbox = font.getbbox(text)
+                w = bbox[2] - bbox[0]
+            except AttributeError:
+                w = font.getsize(text)[0]
+        if len(self._text_width_cache) > 4000:
+            self._text_width_cache.clear()
+        self._text_width_cache[key] = w
+        return w
 
     def _text_height(self, text: str, font) -> int:
         if not text:
@@ -277,7 +451,6 @@ class ForceT2ISplitterPlugin(Star):
             return font.getsize(text)[1]
 
     def _resolve_theme(self) -> str:
-        """根据配置和当前时间自动解析主题（昼夜自动更换核心逻辑）"""
         if self.theme_mode == "浅色": return "light"
         if self.theme_mode == "深色": return "dark"
         h = self._get_now().hour
@@ -377,9 +550,9 @@ class ForceT2ISplitterPlugin(Star):
                 i += 1
                 continue
 
+            # ============ 代码块：转为普通文本段落 ============
             m = re.match(r'^\s*```(.*)$', line)
             if m:
-                lang = m.group(1).strip()
                 i += 1
                 code_lines = []
                 while i < n and not re.match(r'^\s*```\s*$', lines[i]):
@@ -387,7 +560,18 @@ class ForceT2ISplitterPlugin(Star):
                     i += 1
                 if i < n:
                     i += 1
-                blocks.append({"type": "code", "lines": code_lines, "lang": lang})
+                raw = "\n".join(code_lines).rstrip()
+                if raw.strip():
+                    blocks.append({
+                        "type": "paragraph",
+                        "spans": [{
+                            "text": raw,
+                            "bold": False,
+                            "italic": False,
+                            "code": False,
+                            "strike": False,
+                        }],
+                    })
                 continue
 
             if re.fullmatch(r'\s*([-*_])(\s*\1){2,}\s*', line):
@@ -487,12 +671,7 @@ class ForceT2ISplitterPlugin(Star):
         bold = bool(span.get("bold")) or force_bold
         italic = bool(span.get("italic"))
         mono = bool(span.get("code")) or force_mono
-        font = self._load_font(base_size, bold=bold, italic=italic, mono=mono)
-        need_stroke = self._font_stroke.get((base_size, bold, italic, mono), False)
-        stroke = 0
-        if need_stroke:
-            stroke = 1 if base_size < 40 else 2
-        return font, stroke
+        return self._load_font(base_size, bold=bold, italic=italic, mono=mono)
 
     def _wrap_spans(self, spans, base_size, max_width, force_bold=False, force_mono=False):
         lines = []
@@ -506,23 +685,21 @@ class ForceT2ISplitterPlugin(Star):
             cur_w = 0
 
         for span in spans:
-            font, stroke = self._span_style(span, base_size, force_bold, force_mono)
+            font = self._span_style(span, base_size, force_bold, force_mono)
             buf = ""
 
             for atom in self._iter_atoms(span.get("text", "")):
                 if atom == "\n":
                     if buf:
-                        cur_line.append({"text": buf, "font": font,
-                                         "stroke": stroke, "span": span})
+                        cur_line.append({"text": buf, "font": font, "span": span})
                         buf = ""
                     newline()
                     continue
 
-                atom_w = self._text_width(atom, font) + stroke * 2
+                atom_w = self._measure_atom(atom, font)
                 if cur_w + atom_w > max_width and (cur_line or buf):
                     if buf:
-                        cur_line.append({"text": buf, "font": font,
-                                         "stroke": stroke, "span": span})
+                        cur_line.append({"text": buf, "font": font, "span": span})
                         buf = ""
                     newline()
                     if atom == " ":
@@ -531,8 +708,7 @@ class ForceT2ISplitterPlugin(Star):
                 cur_w += atom_w
 
             if buf:
-                cur_line.append({"text": buf, "font": font,
-                                 "stroke": stroke, "span": span})
+                cur_line.append({"text": buf, "font": font, "span": span})
 
         if cur_line or not lines:
             lines.append(cur_line)
@@ -563,15 +739,6 @@ class ForceT2ISplitterPlugin(Star):
                 items.append({
                     "kind": "para", "lines": lines, "line_h": line_h,
                     "height": len(lines) * line_h + 4,
-                })
-
-            elif t == "code":
-                size = max(14, base - 4)
-                line_h = size + 10
-                code_lines = blk.get("lines") or [""]
-                items.append({
-                    "kind": "code", "lines": code_lines, "size": size,
-                    "line_h": line_h, "height": len(code_lines) * line_h + 24,
                 })
 
             elif t == "quote":
@@ -629,10 +796,7 @@ class ForceT2ISplitterPlugin(Star):
     #  绘制
     # =========================================================
     def _span_color(self, span, colors, default_key="text"):
-        if span.get("link"):
-            return colors["primary"]
-        if span.get("code"):
-            return colors.get("inline_code_fg", colors["primary"])
+        # 行内代码不再使用特殊颜色，统一为正文色
         if span.get("strike"):
             return colors["text_soft"]
         return colors[default_key]
@@ -640,11 +804,8 @@ class ForceT2ISplitterPlugin(Star):
     def _draw_spans_line(self, draw, line, colors, x, y, line_h, default_key="text"):
         if not line:
             return
-        base_ascent = 0
-        try:
-            base_ascent = line[0]["font"].getmetrics()[0]
-        except Exception:
-            pass
+
+        base_ascent, _ = self._font_metrics(line[0]["font"])
 
         cx = x
         for seg in line:
@@ -653,52 +814,23 @@ class ForceT2ISplitterPlugin(Star):
                 continue
             font = seg["font"]
             span = seg["span"]
-            stroke = seg.get("stroke", 0)
             color = self._span_color(span, colors, default_key)
-            w = self._text_width(text, font)
 
-            # ✨ 重新设计行内代码（ID标签）的 UI
-            if span.get("code"):
-                # 计算精确的垂直居中和内边距
-                tag_pad_x = 10
-                tag_pad_y = 4
-                try:
-                    _, top, _, bottom = font.getbbox(text)
-                    text_h = bottom - top
-                except Exception:
-                    text_h = line_h - 8
-                
-                tag_y1 = y + (line_h - text_h) // 2 - tag_pad_y
-                tag_y2 = y + (line_h + text_h) // 2 + tag_pad_y
-                tag_x1 = cx - tag_pad_x
-                tag_x2 = cx + w + tag_pad_x
-
-                # 绘制胶囊背景
-                draw.rounded_rectangle(
-                    [tag_x1, tag_y1, tag_x2, tag_y2],
-                    radius=(tag_y2 - tag_y1) // 2, # 完美圆角
-                    fill=colors.get("inline_code_bg", (240, 240, 240, 255)),
-                    outline=colors.get("inline_code_border", (200, 200, 200, 255)),
-                    width=1
-                )
-
-            try:
-                ascent = font.getmetrics()[0]
-            except Exception:
-                ascent = base_ascent
-            dy = max(0, base_ascent - ascent)
-
-            # 增加轻微描边以提升在复杂背景上的可读性
-            text_stroke_width = stroke if stroke else (1 if colors["text"][0] > 128 else 0)
-            text_stroke_fill = (0, 0, 0, 50) if colors["text"][0] > 128 else (255, 255, 255, 50)
-
-            if text_stroke_width > 0:
-                draw.text((cx, y + dy), text, font=font, fill=color,
-                          stroke_width=text_stroke_width, stroke_fill=text_stroke_fill)
-            else:
-                draw.text((cx, y + dy), text, font=font, fill=color)
-
-            cx += w + stroke * 2
+            for sub, sub_font in self._split_by_font(text, font):
+                if sub_font is self._COLOR:
+                    img, w = self._render_colored_emoji(sub, getattr(font, "size", self.font_size))
+                    if img is not None:
+                        yy = int(y + max(0, (line_h - img.height) // 2))
+                        draw._image.paste(img, (int(cx), yy), img)
+                    cx += w
+                else:
+                    w = self._text_width(sub, sub_font)
+                    ascent, _ = self._font_metrics(sub_font)
+                    dy = base_ascent - ascent
+                    if dy < 0:
+                        dy = 0
+                    draw.text((cx, y + dy), sub, font=sub_font, fill=color)
+                    cx += w
 
     def _draw_markdown_items(self, draw, items, colors, x, y, width):
         for it in items:
@@ -712,19 +844,6 @@ class ForceT2ISplitterPlugin(Star):
                 if kind == "heading" and it["level"] <= 2:
                     cy += 4
                     draw.line([x, cy, x + width, cy], fill=colors["quote_border"], width=1)
-                y += it["height"]
-
-            elif kind == "code":
-                draw.rounded_rectangle(
-                    [x - 6, y + 2, x + width + 6, y + it["height"] - 2],
-                    radius=10, fill=colors["code_bg"],
-                )
-                font = self._load_font(it["size"])
-                cy = y + 12
-                for ln in it["lines"]:
-                    if ln:
-                        draw.text((x + 6, cy), ln, font=font, fill=colors["text"])
-                    cy += it["line_h"]
                 y += it["height"]
 
             elif kind == "quote":
@@ -909,69 +1028,16 @@ class ForceT2ISplitterPlugin(Star):
         return FALLBACK_QUOTES[self._get_now().timetuple().tm_yday % len(FALLBACK_QUOTES)]
 
     def _fetch_bg_image(self):
-        if not self.bg_urls or not HAS_REQUESTS:
-            return None
-        if self._bg_cache["bytes"] and (time.time() - self._bg_cache["ts"]) < 300:
-            return self._bg_cache["bytes"]
-        urls = self.bg_urls[self.bg_index:] + self.bg_urls[:self.bg_index]
-        for url in urls:
-            try:
-                r = requests.get(url, timeout=5, headers={"User-Agent": "Mozilla/5.0"})
-                if r.status_code == 200:
-                    try:
-                        img = Image.open(io.BytesIO(r.content))
-                        img.verify()
-                        self._bg_cache["bytes"] = r.content
-                        self._bg_cache["ts"] = time.time()
-                        self.bg_index = (self.bg_index + 1) % len(self.bg_urls)
-                        return r.content
-                    except Exception:
-                        continue
-            except Exception:
-                continue
-        return self._bg_cache["bytes"]
+        # 已停用：不再通过 API 获取背景图片（背景改为纯色）
+        return None
 
     # =========================================================
     #  画布 & 卡片
     # =========================================================
     def _create_base(self, width: int, height: int, colors: dict, theme: str) -> Image.Image:
-        bg_bytes = self._fetch_bg_image()
-        if bg_bytes:
-            try:
-                bg_img = Image.open(io.BytesIO(bg_bytes)).convert("RGBA")
-                bg_img = ImageOps.fit(bg_img, (width, height), Image.Resampling.LANCZOS)
-                # 加深遮罩层，防止背景过亮或过暗干扰文字阅读
-                overlay = Image.new(
-                    "RGBA", (width, height),
-                    (255, 255, 255, 40) if theme == "light" else (0, 0, 0, 60),
-                )
-                return Image.alpha_composite(bg_img, overlay)
-            except Exception:
-                pass
-
-        base = Image.new("RGBA", (width, height), (255, 255, 255, 255))
-        draw = ImageDraw.Draw(base)
-        c1, c2 = colors["bg_start"], colors["bg_end"]
-        for y in range(height):
-            t = y / max(height - 1, 1)
-            draw.line(
-                [(0, y), (width, y)],
-                fill=(int(c1[0] * (1 - t) + c2[0] * t),
-                      int(c1[1] * (1 - t) + c2[1] * t),
-                      int(c1[2] * (1 - t) + c2[2] * t), 255),
-            )
-
-        deco = Image.new("RGBA", (width, height), (0, 0, 0, 0))
-        dd = ImageDraw.Draw(deco)
-        primary, accent = colors["primary"], colors["accent"]
-        dd.ellipse([(width - 380, -260), (width + 120, 240)],
-                   fill=(primary[0], primary[1], primary[2], 70))
-        dd.ellipse([(-160, height - 260), (300, height + 160)],
-                   fill=(accent[0], accent[1], accent[2], 60))
-        dd.ellipse([(width // 2 - 120, height // 3), (width // 2 + 320, height // 3 + 380)],
-                   fill=(primary[0], primary[1], primary[2], 30))
-        deco = deco.filter(ImageFilter.GaussianBlur(70))
-        return Image.alpha_composite(base, deco)
+        # 纯色背景：不再请求 API 背景图，只用主题纯色；深浅模式由传入的 colors 决定
+        bg = colors["bg_start"]
+        return Image.new("RGBA", (width, height), (bg[0], bg[1], bg[2], 255))
 
     def _draw_glass(self, base: Image.Image, box, radius: int, colors: dict):
         x1, y1, x2, y2 = box
@@ -979,20 +1045,17 @@ class ForceT2ISplitterPlugin(Star):
         if w <= 2 or h <= 2:
             return base
 
-        # 阴影优化
-        shadow = Image.new("RGBA", (w + 30, h + 30), (0, 0, 0, 0))
+        shadow = Image.new("RGBA", (w + 20, h + 20), (0, 0, 0, 0))
         ImageDraw.Draw(shadow).rounded_rectangle(
-            [(15, 15), (w + 15, h + 15)], radius=radius, fill=(0, 0, 0, 30))
-        shadow = shadow.filter(ImageFilter.GaussianBlur(15))
-        base.alpha_composite(shadow, dest=(x1 - 15, y1 - 15))
+            [(10, 10), (w + 10, h + 10)], radius=radius, fill=(0, 0, 0, 20))
+        shadow = shadow.filter(ImageFilter.GaussianBlur(self._BLUR_SHADOW))
+        base.alpha_composite(shadow, dest=(x1 - 10, y1 - 10))
 
-        # 背景模糊
-        region = base.crop(box).filter(ImageFilter.GaussianBlur(70))
+        region = base.crop(box).filter(ImageFilter.GaussianBlur(self._BLUR_CARD))
         mask = Image.new("L", (w, h), 0)
         ImageDraw.Draw(mask).rounded_rectangle([(0, 0), (w - 1, h - 1)], radius=radius, fill=255)
         base.paste(region, (x1, y1), mask)
 
-        # 卡片填充与边框
         overlay = Image.new("RGBA", (w, h), (0, 0, 0, 0))
         draw_overlay = ImageDraw.Draw(overlay)
         draw_overlay.rounded_rectangle([(0, 0), (w - 1, h - 1)], radius=radius, fill=colors["card_bg"])
@@ -1010,7 +1073,7 @@ class ForceT2ISplitterPlugin(Star):
         if w <= 2 or h <= 2:
             return
 
-        region = base.crop(box).filter(ImageFilter.GaussianBlur(35))
+        region = base.crop(box).filter(ImageFilter.GaussianBlur(self._BLUR_LOCAL))
         mask = Image.new("L", (w, h), 0)
         ImageDraw.Draw(mask).rounded_rectangle([(0, 0), (w - 1, h - 1)], radius=radius, fill=255)
         base.paste(region, (x1, y1), mask)
@@ -1029,25 +1092,8 @@ class ForceT2ISplitterPlugin(Star):
     # =========================================================
     def _encode_image(self, base_img: Image.Image) -> bytes:
         buf = io.BytesIO()
-        base_img.convert("RGB").save(buf, format="PNG", optimize=True)
-        img_bytes = buf.getvalue()
-
-        if len(img_bytes) > QQ_OFFICIAL_IMAGE_LIMIT:
-            quality = 88
-            jpg = b""
-            while quality >= 50:
-                buf = io.BytesIO()
-                base_img.convert("RGB").save(buf, format="JPEG", quality=quality, optimize=True)
-                jpg = buf.getvalue()
-                if len(jpg) <= QQ_OFFICIAL_IMAGE_LIMIT:
-                    break
-                quality -= 10
-            img_bytes = jpg
-            logger.info(
-                f"[T2I-Splitter] 图片过大，已压缩为 JPEG "
-                f"(quality={quality}, {len(img_bytes) // 1024}KB)"
-            )
-        return img_bytes
+        base_img.convert("RGB").save(buf, format="PNG")
+        return buf.getvalue()
 
     # =========================================================
     #  主渲染
@@ -1121,7 +1167,6 @@ class ForceT2ISplitterPlugin(Star):
         if self.show_quote:
             box = boxes[idx]
             y_quote = box[1] + CPAD
-            # 提升“每日一言”标题的对比度
             draw.text((box[0] + CPAD, y_quote), "❝ 每日一言",
                       font=font_label, fill=colors["primary"])
             qy = y_quote + self._text_height("每日一言", font_label) + 8
@@ -1130,7 +1175,6 @@ class ForceT2ISplitterPlugin(Star):
             self._draw_local_glass(base, q_box, radius=18, colors=colors)
             text_cy = qy + 10
             for line in wrapped_quote:
-                # 使用 text 而不是 text_soft 来提升可读性
                 draw.text((box[0] + CPAD + 16, text_cy), line,
                           font=font_small, fill=colors["text"])
                 text_cy += lh
@@ -1148,7 +1192,6 @@ class ForceT2ISplitterPlugin(Star):
                                    bg_key="status_bg", border_key="status_border")
             text_cy = sy + 10
             for line in status_lines:
-                # 使用 text 而不是 text_soft 来提升可读性
                 draw.text((box[0] + CPAD + 16, text_cy), line,
                           font=font_small, fill=colors["text"])
                 text_cy += lh
@@ -1189,8 +1232,7 @@ class ForceT2ISplitterPlugin(Star):
 
     def _save_png(self, img_bytes: bytes) -> str:
         self._cleanup_tmp()
-        ext = "jpg" if img_bytes[:3] == b"\xff\xd8\xff" else "png"
-        path = os.path.join(self.tmp_dir, f"{uuid.uuid4().hex}.{ext}")
+        path = os.path.join(self.tmp_dir, f"{uuid.uuid4().hex}.png")
         with open(path, "wb") as f:
             f.write(img_bytes)
         return path
@@ -1315,18 +1357,18 @@ class ForceT2ISplitterPlugin(Star):
             return True
         if not result:
             return False
-        try:
-            is_model_result = getattr(result, "is_model_result", None)
-            if callable(is_model_result) and is_model_result():
-                return True
-        except Exception:
-            pass
         ct = getattr(result, "result_content_type", None)
-        if ct is not None and getattr(ct, "name", "") in {
-            "LLM_RESULT", "AGENT_RUNNER_ERROR", "AGENT_RUNNER_RESULT",
-            "TOOL_RESULT", "TOOL_CALL",
-        }:
+        ct_name = getattr(ct, "name", "") if ct is not None else ""
+        if ct_name in ("TOOL_RESULT", "TOOL_CALL", "AGENT_RUNNER_ERROR"):
+            return False
+        if ct_name in ("LLM_RESULT", "AGENT_RUNNER_RESULT"):
             return True
+        if callable(getattr(result, "is_model_result", None)):
+            try:
+                if result.is_model_result():
+                    return True
+            except Exception:
+                pass
         return False
 
     @filter.on_decorating_result(priority=-999999999999999999)
